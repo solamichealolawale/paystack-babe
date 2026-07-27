@@ -1,0 +1,19 @@
+# Never commit real credentials — Paystack keys belong in wp-admin, not in git
+*.env
+.env*
+secrets.php
+config.local.php
+
+# Build artefacts
+/vendor/
+/node_modules/
+*.zip
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.sublime-*
+*.swp
+*~
