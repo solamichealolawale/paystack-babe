@@ -6,7 +6,7 @@ BA Book Everything ships with "Pay later" and "Pay by Coupon" only. Online payme
 
 This plugin fills that gap. It is free and GPLv3.
 
-> **Status: v0.1.0 — not yet production-tested.** The code is written against the BA Book Everything 1.8.x payment API and Paystack's documented REST flow, but it has not yet completed a real end-to-end booking. Treat it as a working draft: run it in Paystack **test mode** first, and read [Known limitations](#known-limitations) before going live.
+> **Status: v0.2.0 — verified end-to-end in test mode.** A full booking has been completed through the real UI against BA Book Everything 1.8.x: room → dates → services → checkout → Paystack hosted checkout → callback → order marked paid, with the correct amount and currency. The **webhook path is still unverified** (it needs a publicly reachable URL). Run in Paystack **test mode** first and read [Known limitations](#known-limitations) before going live.
 
 ## Why this exists
 
@@ -85,8 +85,8 @@ Payment code fails badly when it fails quietly, so the non-obvious decisions are
 
 ## Known limitations
 
-- **Not yet verified end-to-end against a live BABE install.** Hook names and call signatures were read from BABE's GPL source, but the exact shape of `$args` passed to `babe_order_start_paying_with_{method}` is undocumented, so amount resolution falls back through several paths. Verify the charged amount on your first test booking.
 - **Refunds are manual.** BABE's `babe_refund_{method}` filter is declared by other add-ons but never applied by core — it is dead code. Refund through the Paystack dashboard and mark the booking manually.
+- **Deposits/partial payments are only lightly exercised.** The amount resolution prefers `$args['amount']`, then `get_order_prepaid_amount()`, then the order total. Full payment is verified; deposit flows are not.
 - **Webhooks need a host that accepts server-to-server POSTs.** Some free hosts (InfinityFree and relatives) serve a bot challenge to non-browser clients, which silently blocks Paystack's webhook. The redirect flow still completes bookings there, but guests who close the tab mid-payment will not be marked paid. Check your webhook delivers before relying on it.
 - **USD needs enabling on your Paystack account.** Nigerian merchants get NGN by default; USD requires an international payments request and a Zenith Bank USD domiciliary account for payouts. Foreign guests can pay NGN prices without any of that — their bank converts.
 
@@ -108,3 +108,18 @@ Neither is copied; both were invaluable for mapping an undocumented API.
 GPL-3.0-or-later. See [LICENSE](LICENSE).
 
 Not affiliated with or endorsed by Paystack or Booking Algorithms.
+
+## Verified against
+
+| | |
+|---|---|
+| BA Book Everything | 1.8.26 |
+| WordPress | 6.9.4 |
+| PHP | 8.5.6 |
+| MySQL | 9.7.1 |
+| Currency | NGN |
+
+Verified flow: room page → dates → services → checkout (Paystack tab selected) →
+Paystack hosted checkout (test Success) → callback → server-side verify →
+`do_complete_order()` → order marked paid with Amount Due ₦0.00, and BA's
+customer + admin emails delivered.

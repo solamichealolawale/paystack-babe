@@ -218,9 +218,16 @@ class Paystack_Babe_Gateway {
 	/**
 	 * Find the guest's email address.
 	 *
-	 * Paystack requires one. If the booking somehow has none we fall back to
-	 * the site admin address so the transaction can still be traced, rather
-	 * than failing the payment outright.
+	 * Paystack requires a valid address and rejects the transaction outright if
+	 * it is malformed, so this walks several sources and validates each one.
+	 *
+	 * Order of preference:
+	 *   1. Whatever BABE handed us in $args.
+	 *   2. The order's own customer email (the address typed at checkout).
+	 *   3. The full customer details array, in case the direct getter is absent.
+	 *   4. The logged-in user.
+	 *   5. The site admin — last resort, so the payment is traceable rather
+	 *      than failing, though it means the receipt goes to the wrong person.
 	 *
 	 * @param int   $order_id Order id.
 	 * @param array $args     Payment args.
@@ -231,11 +238,23 @@ class Paystack_Babe_Gateway {
 			return $args['email'];
 		}
 
-		if ( method_exists( 'BABE_Order', 'get_order_field' ) ) {
-			$email = BABE_Order::get_order_field( $order_id, 'email' );
+		if ( method_exists( 'BABE_Order', 'get_order_customer_email' ) ) {
+			$email = BABE_Order::get_order_customer_email( $order_id );
 			if ( ! empty( $email ) && is_email( $email ) ) {
 				return $email;
 			}
+		}
+
+		if ( method_exists( 'BABE_Order', 'get_order_customer_details' ) ) {
+			$details = BABE_Order::get_order_customer_details( $order_id );
+			if ( is_array( $details ) && ! empty( $details['email'] ) && is_email( $details['email'] ) ) {
+				return $details['email'];
+			}
+		}
+
+		$user = wp_get_current_user();
+		if ( $user && ! empty( $user->user_email ) && is_email( $user->user_email ) ) {
+			return $user->user_email;
 		}
 
 		return get_option( 'admin_email' );
