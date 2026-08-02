@@ -3,14 +3,16 @@ Contributors: solamichealolawale
 Tags: paystack, booking, payment gateway, ba book everything, hotel
 Requires at least: 6.0
 Tested up to: 6.9
-Requires PHP: 7.4
-Stable tag: 0.4.0
+Requires PHP: 8.1
+Stable tag: 0.5.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
 Accept Paystack payments for bookings made with the BA Book Everything plugin. Card, bank transfer, USSD and mobile money.
 
 == Description ==
+
+**⚠️ Not production ready — do not install on a live site.** An independent review found defects that make this unsafe against real money, the most serious being that the settings cannot be saved through the admin UI at all. Fixes are in progress. Do not use this release to take payments.
 
 BA Book Everything is a capable booking plugin, but out of the box it only offers "Pay later" and "Pay by Coupon". Online payments come from paid, vendor-built add-ons, and there is no Paystack one — which leaves hotels, guesthouses and rental businesses across Nigeria, Ghana, Kenya and South Africa unable to take card payments for bookings.
 
@@ -108,3 +110,7 @@ This plugin is for BA Book Everything bookings only. If you also sell products, 
 
 = 0.2.0 =
 Fixes payment receipts being addressed to the site administrator instead of the guest. Recommended for all users.
+
+== Disclaimer ==
+
+This plugin is not affiliated with, endorsed by, or sponsored by Paystack or Booking Algorithms. "Paystack" and "BA Book Everything" are the property of their respective owners; both names are used here only to describe what this plugin connects.

@@ -3,9 +3,9 @@
  * Plugin Name:       Booking Gateway for Paystack and BA Book Everything
  * Plugin URI:        https://github.com/solamichealolawale/booking-gateway-for-paystack
  * Description:       Adds Paystack as a payment method to the BA Book Everything booking plugin. Supports NGN, GHS, ZAR, KES, USD and XOF, test mode, server-side verification and signed webhooks.
- * Version:           0.4.0
+ * Version:           0.5.0
  * Requires at least: 6.0
- * Requires PHP:      7.4
+ * Requires PHP:      8.1
  * Author:            Olusola Olawale
  * Author URI:        https://github.com/solamichealolawale
  * License:           GPL-3.0-or-later
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PAYSTACK_BABE_VERSION', '0.4.0' );
+define( 'PAYSTACK_BABE_VERSION', '0.5.0' );
 define( 'PAYSTACK_BABE_FILE', __FILE__ );
 define( 'PAYSTACK_BABE_PATH', plugin_dir_path( __FILE__ ) );
 

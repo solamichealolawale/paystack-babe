@@ -29,6 +29,40 @@ class Paystack_Babe_Settings {
 	const KEY_DESCRIPTION    = 'paystack_babe_description';
 
 	/**
+	 * Register the settings hooks.
+	 *
+	 * Kept in this class rather than the gateway so the filter registration and
+	 * the callback that implements it are read together — the argument-order bug
+	 * that made saving impossible survived review precisely because they lived in
+	 * different files.
+	 */
+	public static function register() {
+		if ( ! class_exists( 'BABE_Settings' ) || ! isset( BABE_Settings::$option_name ) ) {
+			return;
+		}
+
+		$filter = 'babe_sanitize_' . BABE_Settings::$option_name;
+
+		// Snapshot first, so a save of some other settings section cannot drop
+		// values that are not present in that submission.
+		add_filter( $filter, array( __CLASS__, 'snapshot_current_filter' ), 5, 2 );
+		add_filter( $filter, array( __CLASS__, 'sanitize' ), 10, 2 );
+	}
+
+	/**
+	 * Filter shim for the pre-save snapshot.
+	 *
+	 * @param array $sanitized BABE's rebuilt whitelist.
+	 * @param array $raw_input Raw submitted values.
+	 * @return array Unmodified.
+	 */
+	public static function snapshot_current_filter( $sanitized, $raw_input = array() ) {
+		self::snapshot_current();
+
+		return $sanitized;
+	}
+
+	/**
 	 * Read a single setting from BABE's settings array.
 	 *
 	 * @param string $key     Setting key.
@@ -230,15 +264,32 @@ class Paystack_Babe_Settings {
 	}
 
 	/**
-	 * Sanitize our keys as BABE saves its settings array.
+	 * Carry our keys through BABE's settings save.
 	 *
-	 * @param array $new_settings Incoming settings.
-	 * @param array $old_settings Previous settings.
+	 * BABE fires this as:
+	 *
+	 *     apply_filters( 'babe_sanitize_' . $option_name, $sanitized, $raw_input )
+	 *
+	 * where `$sanitized` is an array BABE rebuilds *from scratch* containing only
+	 * its own whitelisted keys, and `$raw_input` is the untouched `$_POST` data.
+	 *
+	 * BABE knows nothing about our fields, so they exist only in `$raw_input`.
+	 * Reading them from `$sanitized` — as this did until it was caught in review —
+	 * means nothing is ever copied across and every Paystack setting is silently
+	 * discarded on save, wiping working keys whenever *any* BABE settings section
+	 * is saved. Read from the raw input, write into the sanitized array.
+	 *
+	 * @param array $sanitized BABE's rebuilt whitelist. Must be returned.
+	 * @param array $raw_input Raw submitted values, where our fields actually live.
 	 * @return array
 	 */
-	public static function sanitize( $new_settings, $old_settings = array() ) {
-		if ( ! is_array( $new_settings ) ) {
-			return $new_settings;
+	public static function sanitize( $sanitized, $raw_input = array() ) {
+		if ( ! is_array( $sanitized ) ) {
+			return $sanitized;
+		}
+
+		if ( ! is_array( $raw_input ) ) {
+			$raw_input = array();
 		}
 
 		$text_keys = array(
@@ -250,19 +301,49 @@ class Paystack_Babe_Settings {
 		);
 
 		foreach ( $text_keys as $key ) {
-			if ( isset( $new_settings[ $key ] ) ) {
-				$new_settings[ $key ] = sanitize_text_field( $new_settings[ $key ] );
+			if ( isset( $raw_input[ $key ] ) ) {
+				$sanitized[ $key ] = sanitize_text_field( wp_unslash( $raw_input[ $key ] ) );
+			} elseif ( isset( self::$settings_cache[ $key ] ) ) {
+				// Field absent from this submission (e.g. a different settings
+				// section was saved) — preserve what is already stored rather
+				// than dropping it.
+				$sanitized[ $key ] = self::$settings_cache[ $key ];
 			}
 		}
 
-		if ( isset( $new_settings[ self::KEY_DESCRIPTION ] ) ) {
-			$new_settings[ self::KEY_DESCRIPTION ] = wp_kses_post( $new_settings[ self::KEY_DESCRIPTION ] );
+		if ( isset( $raw_input[ self::KEY_DESCRIPTION ] ) ) {
+			$sanitized[ self::KEY_DESCRIPTION ] = wp_kses_post( wp_unslash( $raw_input[ self::KEY_DESCRIPTION ] ) );
+		} elseif ( isset( self::$settings_cache[ self::KEY_DESCRIPTION ] ) ) {
+			$sanitized[ self::KEY_DESCRIPTION ] = self::$settings_cache[ self::KEY_DESCRIPTION ];
 		}
 
-		if ( isset( $new_settings[ self::KEY_TEST_MODE ] ) ) {
-			$new_settings[ self::KEY_TEST_MODE ] = '1' === (string) $new_settings[ self::KEY_TEST_MODE ] ? '1' : '0';
+		// An unchecked checkbox submits nothing, so the hidden companion field is
+		// what distinguishes "turned off" from "not on this form at all".
+		if ( isset( $raw_input[ self::KEY_TEST_MODE ] ) ) {
+			$sanitized[ self::KEY_TEST_MODE ] = '1' === (string) $raw_input[ self::KEY_TEST_MODE ] ? '1' : '0';
+		} elseif ( isset( self::$settings_cache[ self::KEY_TEST_MODE ] ) ) {
+			$sanitized[ self::KEY_TEST_MODE ] = self::$settings_cache[ self::KEY_TEST_MODE ];
 		}
 
-		return $new_settings;
+		return $sanitized;
+	}
+
+	/**
+	 * Snapshot of our stored settings, taken before BABE overwrites the option.
+	 *
+	 * @var array
+	 */
+	private static $settings_cache = array();
+
+	/**
+	 * Capture current values so a partial save cannot drop them.
+	 *
+	 * Runs on the same filter as sanitize() but at an earlier priority, while
+	 * BABE_Settings::$settings still reflects what is on disk.
+	 */
+	public static function snapshot_current() {
+		if ( class_exists( 'BABE_Settings' ) && isset( BABE_Settings::$settings ) && is_array( BABE_Settings::$settings ) ) {
+			self::$settings_cache = BABE_Settings::$settings;
+		}
 	}
 }

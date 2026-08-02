@@ -6,13 +6,15 @@ BA Book Everything ships with "Pay later" and "Pay by Coupon" only. Online payme
 
 This plugin fills that gap. It is free and GPLv3.
 
-> **Status: v0.4.0 — both payment paths verified in test mode.**
+> ## ⚠️ Not production ready — do not install on a live site
 >
-> *Redirect path:* a full booking completed through the real UI against BA Book Everything 1.8.16 — room → dates → extras → checkout → Paystack hosted checkout → callback → order marked paid, with the correct amount and currency, and the extras carried onto the order.
+> An independent review found defects that make this unsafe to run against real money. Most importantly: **the settings cannot be saved through the admin UI** (the sanitize callback reads the wrong filter argument), so the gateway can never be configured the documented way. Earlier "verified end-to-end" claims in this file were reached by writing settings directly to the database with WP-CLI, which bypassed exactly the path that is broken.
 >
-> *Webhook path:* verified by initialising a transaction whose `callback_url` pointed elsewhere, paying it for real on Paystack, and leaving the webhook as the only route that could complete the order. Forged and unsigned deliveries were rejected with 401; the signed delivery completed the order; two replays did not double-credit it.
+> Also outstanding: a callback/webhook race that can either double-credit an order or show a guest a false confirmation page; a webhook that acknowledges 200 before doing any work, disabling Paystack's 72-hour retry; every failure path silent (nothing reads the error it records, and it never logs); a guest who chooses "pay in full" being charged only the deposit; and an unauthenticated endpoint that can be used to exhaust the merchant's Paystack API rate limit.
 >
-> Not yet exercised: **live mode** (test keys only), currencies other than **NGN**, and BA versions other than **1.8.16**. Run in Paystack test mode first and read [Known limitations](#known-limitations) before going live.
+> The cryptography and WordPress hygiene are sound — HMAC-SHA512 over the raw body with `hash_equals`, failing closed; no SQL injection, SSRF or open-redirect surface; output properly escaped. What is broken is the state machine around them.
+>
+> Fixes are in progress. Until this notice is removed, treat this repository as a work in progress.
 
 ## Why this exists
 

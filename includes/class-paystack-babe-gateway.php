@@ -34,9 +34,7 @@ class Paystack_Babe_Gateway {
 		// miss. We take all five.
 		add_action( 'babe_order_start_paying_with_' . $method, array( __CLASS__, 'start_payment' ), 10, 5 );
 
-		if ( class_exists( 'BABE_Settings' ) && isset( BABE_Settings::$option_name ) ) {
-			add_filter( 'babe_sanitize_' . BABE_Settings::$option_name, array( Paystack_Babe_Settings::class, 'sanitize' ), 10, 2 );
-		}
+		Paystack_Babe_Settings::register();
 	}
 
 	/**
