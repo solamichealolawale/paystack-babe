@@ -113,7 +113,7 @@ Not affiliated with or endorsed by Paystack or Booking Algorithms.
 
 | | |
 |---|---|
-| BA Book Everything | 1.8.26 |
+| BA Book Everything | 1.8.16 (payment API identical in 1.8.26) |
 | WordPress | 6.9.4 |
 | PHP | 8.5.6 |
 | MySQL | 9.7.1 |
