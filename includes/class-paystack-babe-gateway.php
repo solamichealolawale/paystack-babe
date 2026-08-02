@@ -89,18 +89,18 @@ class Paystack_Babe_Gateway {
 		$order_id = absint( $order_id );
 
 		if ( ! $order_id ) {
-			self::fail( __( 'Could not identify the booking to pay for.', 'booking-gateway-for-paystack' ), $current_url );
+			self::fail( __( 'Could not identify the booking to pay for.', 'booking-gateway-for-paystack' ), $current_url, $order_id );
 		}
 
 		if ( ! Paystack_Babe_Settings::is_configured() ) {
-			self::fail( __( 'Paystack is not configured. Please contact the property.', 'booking-gateway-for-paystack' ), $current_url );
+			self::fail( __( 'Paystack is not configured. Please contact the property.', 'booking-gateway-for-paystack' ), $current_url, $order_id );
 		}
 
 		$amount   = self::resolve_amount( $order_id, $args );
 		$currency = self::resolve_currency( $order_id );
 
 		if ( $amount <= 0 ) {
-			self::fail( __( 'This booking has nothing left to pay.', 'booking-gateway-for-paystack' ), $current_url );
+			self::fail( __( 'This booking has nothing left to pay.', 'booking-gateway-for-paystack' ), $current_url, $order_id );
 		}
 
 		if ( ! Paystack_Babe_Api::supports_currency( $currency ) ) {
@@ -110,12 +110,19 @@ class Paystack_Babe_Gateway {
 					__( 'Paystack does not support %s.', 'booking-gateway-for-paystack' ),
 					$currency
 				),
-				$current_url
-			);
+				$current_url, $order_id );
 		}
 
 		$reference = self::build_reference( $order_id );
 		$email     = self::resolve_email( $order_id, $args );
+
+		// Record the payment BEFORE sending the guest to Paystack. If this row
+		// does not exist, the callback and webhook will refuse the reference —
+		// which is what stops the unauthenticated callback being used to make
+		// unlimited API calls on the merchant's key.
+		if ( ! Paystack_Babe_Store::record_issued( $reference, $order_id, $amount, $currency ) ) {
+			self::fail( __( 'Could not start the payment. Please try again.', 'booking-gateway-for-paystack' ), $current_url, $order_id );
+		}
 
 		$api    = new Paystack_Babe_Api( Paystack_Babe_Settings::secret_key() );
 		$result = $api->initialize_transaction(
@@ -138,27 +145,12 @@ class Paystack_Babe_Gateway {
 			// Paystack's own message is far more useful than anything generic
 			// we could invent — "Currency not supported by merchant" tells the
 			// operator exactly what to fix.
-			self::fail( $result->get_error_message(), $current_url );
+			self::fail( $result->get_error_message(), $current_url, $order_id );
 		}
 
 		if ( empty( $result['authorization_url'] ) ) {
-			self::fail( __( 'Paystack did not return a checkout URL.', 'booking-gateway-for-paystack' ), $current_url );
+			self::fail( __( 'Paystack did not return a checkout URL.', 'booking-gateway-for-paystack' ), $current_url, $order_id );
 		}
-
-		// Remember where to send the guest back to. Stored against the
-		// reference so the callback can recover it without trusting the query
-		// string it is handed.
-		set_transient(
-			'paystack_babe_return_' . $reference,
-			array(
-				'order_id'    => $order_id,
-				'success_url' => $success_url,
-				'cancel_url'  => $current_url,
-				'amount'      => $amount,
-				'currency'    => $currency,
-			),
-			DAY_IN_SECONDS
-		);
 
 		wp_redirect( esc_url_raw( $result['authorization_url'] ) );
 		exit;
@@ -176,22 +168,39 @@ class Paystack_Babe_Gateway {
 	 * @return float
 	 */
 	private static function resolve_amount( $order_id, array $args ) {
-		if ( isset( $args['amount'] ) && is_numeric( $args['amount'] ) && (float) $args['amount'] > 0 ) {
-			return (float) $args['amount'];
+		$total = method_exists( 'BABE_Order', 'get_order_total_amount' )
+			? (float) BABE_Order::get_order_total_amount( $order_id )
+			: 0.0;
+
+		$deposit = method_exists( 'BABE_Order', 'get_order_prepaid_amount' )
+			? (float) BABE_Order::get_order_prepaid_amount( $order_id )
+			: 0.0;
+
+		// BABE puts the guest's choice in $args['payment']['amount_to_pay'] as
+		// the string 'full' or 'deposit'. Reading it is not optional: where a
+		// booking offers both, ignoring it charged the deposit even when the
+		// guest had explicitly chosen to pay in full — and BABE then marks the
+		// order fully settled, silently writing off the balance.
+		$choice = '';
+		if ( isset( $args['payment']['amount_to_pay'] ) && is_scalar( $args['payment']['amount_to_pay'] ) ) {
+			$choice = (string) $args['payment']['amount_to_pay'];
 		}
 
-		if ( method_exists( 'BABE_Order', 'get_order_prepaid_amount' ) ) {
-			$prepaid = (float) BABE_Order::get_order_prepaid_amount( $order_id );
-			if ( $prepaid > 0 ) {
-				return $prepaid;
-			}
+		if ( 'full' === $choice && $total > 0 ) {
+			return $total;
 		}
 
-		if ( method_exists( 'BABE_Order', 'get_order_total_amount' ) ) {
-			return (float) BABE_Order::get_order_total_amount( $order_id );
+		if ( 'deposit' === $choice && $deposit > 0 ) {
+			return $deposit;
 		}
 
-		return 0.0;
+		// No explicit choice: fall back to the deposit when one is due,
+		// otherwise the full total.
+		if ( $deposit > 0 ) {
+			return $deposit;
+		}
+
+		return $total;
 	}
 
 	/**
@@ -297,12 +306,24 @@ class Paystack_Babe_Gateway {
 	 * @param string $message     Error message.
 	 * @param string $redirect_to URL to return to.
 	 */
-	private static function fail( $message, $redirect_to = '' ) {
-		if ( ! session_id() && ! headers_sent() ) {
-			@session_start(); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-		}
+	private static function fail( $message, $redirect_to = '', $order_id = 0 ) {
+		/**
+		 * Fires when a payment could not be started.
+		 *
+		 * @param string $message  Reason.
+		 * @param int    $order_id Order id, if known.
+		 */
+		do_action( 'paystack_babe_payment_failed', $message, $order_id );
 
-		$_SESSION['paystack_babe_error'] = $message;
+		// Logged unconditionally. This used to write to a $_SESSION key that
+		// nothing read and log nothing at all, so an operator whose keys were
+		// missing or whose currency was unsupported had no way to discover that
+		// guests were being turned away.
+		error_log( '[booking-gateway-for-paystack][error] start_payment: ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+
+		if ( $order_id ) {
+			set_transient( 'paystack_babe_error_' . absint( $order_id ), $message, 15 * MINUTE_IN_SECONDS );
+		}
 
 		wp_redirect( $redirect_to ? esc_url_raw( $redirect_to ) : home_url() );
 		exit;

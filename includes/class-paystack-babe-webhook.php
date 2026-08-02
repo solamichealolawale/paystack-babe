@@ -8,8 +8,9 @@
  *   2. The Paystack webhook (charge.success), sent server-to-server.
  *
  * Either may arrive first, both may arrive, and the callback may never arrive
- * at all if the guest closes the tab. Both paths therefore funnel into the same
- * idempotent fulfilment routine, and neither trusts anything the browser says.
+ * at all if the guest closes the tab. Both funnel into one routine whose
+ * mutual exclusion is a conditional UPDATE in the database — see
+ * Paystack_Babe_Store::claim() for why a transient guard was not sufficient.
  *
  * @package PaystackBabe
  */
@@ -27,15 +28,12 @@ class Paystack_Babe_Webhook {
 	const CALLBACK_ARG = 'paystack_babe_callback';
 
 	/**
-	 * Paystack's webhook source IPs.
-	 *
-	 * Advisory only — used to annotate logs, not to reject. The signature check
-	 * is the real gate, and rejecting on IP alone breaks behind proxies and
-	 * CDNs where REMOTE_ADDR is not the true origin.
-	 *
-	 * @var string[]
+	 * Fulfilment outcomes, so callers can tell these apart. Returning a bare
+	 * order id for both "I credited this" and "someone else holds it" is what
+	 * previously let a guest be shown a confirmation page for an unpaid booking.
 	 */
-	const PAYSTACK_IPS = array( '52.31.139.75', '52.49.173.169', '52.214.14.220' );
+	const RESULT_FULFILLED = 'fulfilled';
+	const RESULT_ALREADY   = 'already_fulfilled';
 
 	/**
 	 * Register handlers.
@@ -69,39 +67,43 @@ class Paystack_Babe_Webhook {
 
 	/**
 	 * Handle the server-to-server webhook.
+	 *
+	 * Note the response is sent *after* the work, not before. Acknowledging
+	 * early looks tidy but tells Paystack the delivery succeeded before anything
+	 * has happened — so a failed verify, a database error or a timeout would
+	 * never be retried, silently losing the payment. Paystack retrying a slow
+	 * request is the desired behaviour, not a problem to optimise away.
 	 */
 	public static function handle_webhook() {
 		$raw       = file_get_contents( 'php://input' );
 		$signature = isset( $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ) ? wp_unslash( $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ) : '';
 
 		if ( ! Paystack_Babe_Api::verify_webhook_signature( $raw, $signature, Paystack_Babe_Settings::secret_key() ) ) {
-			self::log( 'Webhook rejected: bad or missing signature.' );
+			self::log( 'Webhook rejected: bad or missing signature.', 'warning' );
 			status_header( 401 );
 			exit;
 		}
 
 		$event = json_decode( $raw, true );
 
-		// Acknowledge immediately. Paystack times out slow endpoints and will
-		// retry for 72 hours, which would otherwise pile up duplicate work.
-		status_header( 200 );
-		if ( function_exists( 'fastcgi_finish_request' ) ) {
-			fastcgi_finish_request();
-		}
-
 		if ( ! is_array( $event ) || empty( $event['event'] ) || 'charge.success' !== $event['event'] ) {
+			status_header( 200 );
 			exit;
 		}
 
-		$reference = isset( $event['data']['reference'] ) ? $event['data']['reference'] : '';
+		$reference = isset( $event['data']['reference'] ) ? (string) $event['data']['reference'] : '';
+		$result    = '' === $reference ? new WP_Error( 'no_reference', 'No reference in payload.' ) : self::fulfil( $reference, 'webhook' );
 
-		if ( '' !== $reference ) {
-			// Re-verify against the API rather than trusting the payload. The
-			// signature proves it came from Paystack; verify proves the current
-			// state of the transaction.
-			self::fulfil_from_reference( $reference, 'webhook' );
+		if ( is_wp_error( $result ) ) {
+			// 500 so Paystack retries. The one exception is a reference we never
+			// issued, which will never become valid — acknowledge those to stop
+			// 72 hours of pointless redelivery.
+			$permanent = in_array( $result->get_error_code(), array( 'unknown_reference', 'no_reference' ), true );
+			status_header( $permanent ? 200 : 500 );
+			exit;
 		}
 
+		status_header( 200 );
 		exit;
 	}
 
@@ -114,7 +116,6 @@ class Paystack_Babe_Webhook {
 		}
 
 		// Paystack documents `reference`; `trxref` is also commonly present.
-		// Accept either.
 		$reference = '';
 		foreach ( array( 'reference', 'trxref' ) as $key ) {
 			if ( ! empty( $_GET[ $key ] ) ) {
@@ -128,160 +129,178 @@ class Paystack_Babe_Webhook {
 			exit;
 		}
 
-		$context = get_transient( 'paystack_babe_return_' . $reference );
-		$result  = self::fulfil_from_reference( $reference, 'callback' );
+		$payment = Paystack_Babe_Store::get( $reference );
 
-		if ( is_wp_error( $result ) ) {
-			if ( ! session_id() && ! headers_sent() ) {
-				@session_start(); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			}
-			$_SESSION['paystack_babe_error'] = $result->get_error_message();
-
-			$cancel = ! empty( $context['cancel_url'] ) ? $context['cancel_url'] : home_url();
-			wp_redirect( esc_url_raw( $cancel ) );
+		if ( ! $payment ) {
+			// Not a reference this site issued. Bail before touching the Paystack
+			// API — otherwise this unauthenticated endpoint is a free way to burn
+			// the merchant's API rate limit.
+			self::log( sprintf( 'Callback for unknown reference: %s', $reference ), 'warning' );
+			wp_safe_redirect( home_url() );
 			exit;
 		}
 
-		$success = ! empty( $context['success_url'] ) ? $context['success_url'] : self::confirmation_url( $result );
+		$order_id = (int) $payment['order_id'];
+		$result   = self::fulfil( $reference, 'callback' );
 
-		wp_redirect( esc_url_raw( $success ) );
+		if ( is_wp_error( $result ) ) {
+			self::remember_error( $order_id, $result->get_error_message() );
+			wp_safe_redirect( self::checkout_url( $order_id ) );
+			exit;
+		}
+
+		wp_safe_redirect( self::confirmation_url( $order_id ) );
 		exit;
 	}
 
 	/**
-	 * Verify a reference with Paystack and mark the booking paid.
+	 * Verify a reference with Paystack and credit the booking exactly once.
 	 *
 	 * @param string $reference Transaction reference.
 	 * @param string $source    'callback' or 'webhook', for logging.
-	 * @return int|WP_Error Order id on success.
+	 * @return string|WP_Error One of the RESULT_* constants.
 	 */
-	private static function fulfil_from_reference( $reference, $source ) {
-		$order_id = Paystack_Babe_Gateway::order_id_from_reference( $reference );
+	private static function fulfil( $reference, $source ) {
+		$payment = Paystack_Babe_Store::get( $reference );
 
-		if ( ! $order_id ) {
-			self::log( sprintf( 'Ignoring reference not created by this plugin: %s', $reference ) );
-			return new WP_Error( 'paystack_babe_foreign_reference', __( 'Unrecognised payment reference.', 'booking-gateway-for-paystack' ) );
+		if ( ! $payment ) {
+			self::log( sprintf( '[%s] Unknown reference, ignoring: %s', $source, $reference ), 'warning' );
+
+			return new WP_Error( 'unknown_reference', __( 'Unrecognised payment reference.', 'booking-gateway-for-paystack' ) );
 		}
 
-		// Serialise callback and webhook so they cannot both fulfil the same
-		// reference concurrently.
-		$lock_key = 'paystack_babe_lock_' . md5( $reference );
-		if ( get_transient( $lock_key ) ) {
-			return $order_id;
+		$order_id = (int) $payment['order_id'];
+
+		if ( Paystack_Babe_Store::STATUS_FULFILLED === $payment['status'] ) {
+			return self::RESULT_ALREADY;
 		}
-		set_transient( $lock_key, 1, 2 * MINUTE_IN_SECONDS );
+
+		if ( ! get_post( $order_id ) ) {
+			// The order was deleted between checkout and delivery. Say so loudly:
+			// a real charge exists with nothing to attach it to.
+			self::log( sprintf( '[%s] Order %d no longer exists for paid reference %s — MANUAL ACTION REQUIRED.', $source, $order_id, $reference ), 'error' );
+
+			return new WP_Error( 'order_missing', __( 'The booking for this payment no longer exists.', 'booking-gateway-for-paystack' ) );
+		}
 
 		$api    = new Paystack_Babe_Api( Paystack_Babe_Settings::secret_key() );
 		$verify = $api->verify_transaction( $reference );
 
 		if ( is_wp_error( $verify ) ) {
-			delete_transient( $lock_key );
-			self::log( sprintf( '[%s] Verify failed for %s: %s', $source, $reference, $verify->get_error_message() ) );
+			self::log( sprintf( '[%s] Verify failed for %s: %s', $source, $reference, $verify->get_error_message() ), 'error' );
+
 			return $verify;
 		}
 
-		// The transaction status lives in data.status. The envelope's own
-		// status only reports whether the API call worked.
+		// The transaction status lives in data.status. The envelope's own status
+		// only reports whether the API call worked.
 		$status = isset( $verify['status'] ) ? (string) $verify['status'] : '';
 
 		if ( 'success' !== $status ) {
-			delete_transient( $lock_key );
-			self::log( sprintf( '[%s] Not fulfilling %s — transaction status is "%s".', $source, $reference, $status ) );
-			return new WP_Error(
-				'paystack_babe_not_successful',
-				__( 'The payment was not completed.', 'booking-gateway-for-paystack' )
-			);
-		}
+			self::log( sprintf( '[%s] Not fulfilling %s — transaction status is "%s".', $source, $reference, $status ), 'info' );
 
-		$context  = get_transient( 'paystack_babe_return_' . $reference );
-		$expected = isset( $context['amount'] ) ? (float) $context['amount'] : 0.0;
-		$currency = isset( $context['currency'] ) ? (string) $context['currency'] : '';
+			return new WP_Error( 'not_successful', __( 'The payment was not completed.', 'booking-gateway-for-paystack' ) );
+		}
 
 		$paid_subunit = isset( $verify['amount'] ) ? (int) $verify['amount'] : 0;
 		$paid_ccy     = isset( $verify['currency'] ) ? strtoupper( (string) $verify['currency'] ) : '';
+		$paid_major   = $paid_subunit / 100;
 
-		// Re-check what was actually paid against what we asked for. Compared
-		// against our own stored figure, never anything echoed by the browser.
-		if ( $expected > 0 ) {
-			if ( $paid_subunit < Paystack_Babe_Api::to_subunit( $expected ) ) {
-				delete_transient( $lock_key );
-				self::log( sprintf( '[%s] Underpayment on %s: expected %d, got %d.', $source, $reference, Paystack_Babe_Api::to_subunit( $expected ), $paid_subunit ) );
-				return new WP_Error( 'paystack_babe_amount_mismatch', __( 'The amount paid did not match the booking total.', 'booking-gateway-for-paystack' ) );
-			}
+		$expected_amount   = (float) $payment['expected_amount'];
+		$expected_currency = strtoupper( (string) $payment['expected_currency'] );
 
-			if ( '' !== $currency && $paid_ccy !== strtoupper( $currency ) ) {
-				delete_transient( $lock_key );
-				self::log( sprintf( '[%s] Currency mismatch on %s: expected %s, got %s.', $source, $reference, $currency, $paid_ccy ) );
-				return new WP_Error( 'paystack_babe_currency_mismatch', __( 'The payment currency did not match the booking.', 'booking-gateway-for-paystack' ) );
-			}
+		// Durable, so unlike the previous transient this cannot quietly vanish
+		// and take the check with it.
+		if ( $paid_subunit < Paystack_Babe_Api::to_subunit( $expected_amount ) ) {
+			self::log( sprintf( '[%s] Underpayment on %s: expected %d, got %d.', $source, $reference, Paystack_Babe_Api::to_subunit( $expected_amount ), $paid_subunit ), 'error' );
+
+			return new WP_Error( 'amount_mismatch', __( 'The amount paid did not match the booking total.', 'booking-gateway-for-paystack' ) );
 		}
 
-		if ( self::already_fulfilled( $reference ) ) {
-			self::log( sprintf( '[%s] %s already fulfilled — skipping.', $source, $reference ) );
-			return $order_id;
+		if ( '' !== $expected_currency && $paid_ccy !== $expected_currency ) {
+			self::log( sprintf( '[%s] Currency mismatch on %s: expected %s, got %s.', $source, $reference, $expected_currency, $paid_ccy ), 'error' );
+
+			return new WP_Error( 'currency_mismatch', __( 'The payment currency did not match the booking.', 'booking-gateway-for-paystack' ) );
+		}
+
+		// Atomic. Exactly one concurrent caller can win this.
+		if ( ! Paystack_Babe_Store::claim( $reference, $paid_major ) ) {
+			self::log( sprintf( '[%s] %s already claimed elsewhere — no double credit.', $source, $reference ), 'info' );
+
+			return self::RESULT_ALREADY;
 		}
 
 		BABE_Payments::do_complete_order(
 			$order_id,
 			PAYSTACK_BABE_METHOD,
 			$reference,
-			$paid_subunit / 100,
+			$paid_major,
 			$paid_ccy,
 			array( 'source' => $source )
 		);
 
-		self::mark_fulfilled( $reference );
-		self::log( sprintf( '[%s] Completed order %d from %s.', $source, $order_id, $reference ) );
+		self::log( sprintf( '[%s] Completed order %d from %s (%s %s).', $source, $order_id, $reference, $paid_major, $paid_ccy ), 'info' );
 
-		return $order_id;
+		return self::RESULT_FULFILLED;
 	}
 
 	/**
-	 * Whether this reference has already been turned into a completed booking.
+	 * Stash a failure message where the guest's next page load can show it.
 	 *
-	 * Persisted rather than cached — a transient expiring must never allow a
-	 * second fulfilment of the same payment.
+	 * Replaces a `$_SESSION` key that nothing ever read — every payment failure
+	 * was silent, and native sessions interact badly with page caches anyway.
 	 *
-	 * @param string $reference Transaction reference.
-	 * @return bool
+	 * @param int    $order_id Order id.
+	 * @param string $message  Message to show.
 	 */
-	private static function already_fulfilled( $reference ) {
-		$done = get_option( 'paystack_babe_fulfilled', array() );
-
-		return is_array( $done ) && isset( $done[ $reference ] );
+	private static function remember_error( $order_id, $message ) {
+		if ( $order_id ) {
+			set_transient( 'paystack_babe_error_' . $order_id, $message, 15 * MINUTE_IN_SECONDS );
+		}
 	}
 
 	/**
-	 * Record a reference as fulfilled.
+	 * Read and clear a stored failure message.
 	 *
-	 * @param string $reference Transaction reference.
+	 * @param int $order_id Order id.
+	 * @return string
 	 */
-	private static function mark_fulfilled( $reference ) {
-		$done = get_option( 'paystack_babe_fulfilled', array() );
+	public static function take_error( $order_id ) {
+		$key     = 'paystack_babe_error_' . absint( $order_id );
+		$message = get_transient( $key );
 
-		if ( ! is_array( $done ) ) {
-			$done = array();
+		if ( $message ) {
+			delete_transient( $key );
 		}
 
-		$done[ $reference ] = time();
-
-		// Keep the ledger bounded; retain the most recent 500 references.
-		if ( count( $done ) > 500 ) {
-			asort( $done );
-			$done = array_slice( $done, -500, null, true );
-		}
-
-		update_option( 'paystack_babe_fulfilled', $done, false );
+		return $message ? (string) $message : '';
 	}
 
 	/**
-	 * Resolve BABE's confirmation page for an order.
+	 * BABE's checkout page for an order, so a failed payment can be retried.
+	 *
+	 * @param int $order_id Order id.
+	 * @return string
+	 */
+	private static function checkout_url( $order_id ) {
+		if ( $order_id && method_exists( 'BABE_Order', 'get_order_checkout_page' ) ) {
+			$url = BABE_Order::get_order_checkout_page( $order_id );
+			if ( ! empty( $url ) ) {
+				return $url;
+			}
+		}
+
+		return home_url();
+	}
+
+	/**
+	 * BABE's confirmation page for an order.
 	 *
 	 * @param int $order_id Order id.
 	 * @return string
 	 */
 	private static function confirmation_url( $order_id ) {
-		if ( method_exists( 'BABE_Order', 'get_order_confirmation_page' ) ) {
+		if ( $order_id && method_exists( 'BABE_Order', 'get_order_confirmation_page' ) ) {
 			$url = BABE_Order::get_order_confirmation_page( $order_id );
 			if ( ! empty( $url ) ) {
 				return $url;
@@ -292,13 +311,27 @@ class Paystack_Babe_Webhook {
 	}
 
 	/**
-	 * Write to the PHP error log when WP_DEBUG is on.
+	 * Record a payment event.
+	 *
+	 * Money events are logged unconditionally. Gating these behind WP_DEBUG —
+	 * which is off on any sane production site — meant a guest reporting "I paid
+	 * but my booking says unpaid" left no trail at all to reconstruct.
 	 *
 	 * @param string $message Message.
+	 * @param string $level   'info', 'warning' or 'error'.
 	 */
-	private static function log( $message ) {
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			error_log( '[paystack-babe] ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	private static function log( $message, $level = 'info' ) {
+		/**
+		 * Fires for every payment event, so a site can route these into its own
+		 * logging stack.
+		 *
+		 * @param string $message Message.
+		 * @param string $level   Severity.
+		 */
+		do_action( 'paystack_babe_log', $message, $level );
+
+		if ( 'info' !== $level || ( defined( 'WP_DEBUG' ) && WP_DEBUG ) ) {
+			error_log( '[booking-gateway-for-paystack][' . $level . '] ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 		}
 	}
 }

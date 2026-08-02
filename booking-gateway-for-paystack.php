@@ -3,7 +3,7 @@
  * Plugin Name:       Booking Gateway for Paystack and BA Book Everything
  * Plugin URI:        https://github.com/solamichealolawale/booking-gateway-for-paystack
  * Description:       Adds Paystack as a payment method to the BA Book Everything booking plugin. Supports NGN, GHS, ZAR, KES, USD and XOF, test mode, server-side verification and signed webhooks.
- * Version:           0.5.0
+ * Version:           0.6.0
  * Requires at least: 6.0
  * Requires PHP:      8.1
  * Author:            Olusola Olawale
@@ -17,7 +17,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PAYSTACK_BABE_VERSION', '0.5.0' );
+define( 'PAYSTACK_BABE_VERSION', '0.6.0' );
 define( 'PAYSTACK_BABE_FILE', __FILE__ );
 define( 'PAYSTACK_BABE_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -30,6 +30,7 @@ define( 'PAYSTACK_BABE_PATH', plugin_dir_path( __FILE__ ) );
  */
 define( 'PAYSTACK_BABE_METHOD', 'paystack' );
 
+require_once PAYSTACK_BABE_PATH . 'includes/class-paystack-babe-store.php';
 require_once PAYSTACK_BABE_PATH . 'includes/class-paystack-babe-api.php';
 require_once PAYSTACK_BABE_PATH . 'includes/class-paystack-babe-settings.php';
 require_once PAYSTACK_BABE_PATH . 'includes/class-paystack-babe-gateway.php';
@@ -54,6 +55,12 @@ function paystack_babe_bootstrap() {
 	Paystack_Babe_Assets::init();
 }
 add_action( 'plugins_loaded', 'paystack_babe_bootstrap', 20 );
+
+// The payments table is what makes fulfilment atomic, so it must exist before
+// any payment is issued. Created on activation, and re-checked on load so a
+// plugin updated by file copy (rather than through wp-admin) still gets it.
+register_activation_hook( PAYSTACK_BABE_FILE, array( 'Paystack_Babe_Store', 'install' ) );
+add_action( 'plugins_loaded', array( 'Paystack_Babe_Store', 'install' ), 5 );
 
 /**
  * Check that BA Book Everything is active and exposes the API we bind to.
