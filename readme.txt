@@ -1,6 +1,6 @@
-=== Booking Gateway for Paystack ===
+=== Booking Gateway for Paystack and BA Book Everything ===
 Contributors: solamichealolawale
-Tags: paystack, booking, payment gateway, hotel, nigeria
+Tags: paystack, booking, payment gateway, ba book everything, hotel
 Requires at least: 6.0
 Tested up to: 6.9
 Requires PHP: 7.4

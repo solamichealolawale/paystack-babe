@@ -1,4 +1,4 @@
-# Booking Gateway for Paystack
+# Booking Gateway for Paystack and BA Book Everything
 
 Adds [Paystack](https://paystack.com) as a payment method to the [BA Book Everything](https://wordpress.org/plugins/ba-book-everything/) WordPress booking plugin.
 
@@ -47,7 +47,7 @@ Because BABE couples via `do_action()`/`apply_filters()` with no interface, a re
 ## Installation
 
 1. Download the latest release zip (or clone into `wp-content/plugins/`).
-2. Activate **Paystack for BA Book Everything**.
+2. Activate **Booking Gateway for Paystack and BA Book Everything**.
 3. Go to **BA Settings → Payments**, enable Paystack, and paste your keys from the [Paystack dashboard](https://dashboard.paystack.com/#/settings/developers).
 4. Copy the **Webhook URL** shown on that settings screen into Paystack → Settings → API Keys & Webhooks.
 5. Leave **Test mode** on and make a test booking before going live.
