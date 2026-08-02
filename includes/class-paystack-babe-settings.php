@@ -97,39 +97,39 @@ class Paystack_Babe_Settings {
 	public static function render_fields( $section_id, $settings_page, $option_name ) {
 		$fields = array(
 			self::KEY_TAB_TITLE   => array(
-				'label' => __( 'Payment tab title', 'paystack-babe' ),
+				'label' => __( 'Payment tab title', 'booking-gateway-for-paystack' ),
 				'type'  => 'text',
-				'desc'  => __( 'Shown to guests on the checkout page. Defaults to "Pay with Paystack".', 'paystack-babe' ),
+				'desc'  => __( 'Shown to guests on the checkout page. Defaults to "Pay with Paystack".', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_DESCRIPTION => array(
-				'label' => __( 'Payment description', 'paystack-babe' ),
+				'label' => __( 'Payment description', 'booking-gateway-for-paystack' ),
 				'type'  => 'textarea',
-				'desc'  => __( 'Optional text shown under the payment tab title.', 'paystack-babe' ),
+				'desc'  => __( 'Optional text shown under the payment tab title.', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_TEST_MODE   => array(
-				'label' => __( 'Test mode', 'paystack-babe' ),
+				'label' => __( 'Test mode', 'booking-gateway-for-paystack' ),
 				'type'  => 'checkbox',
-				'desc'  => __( 'Use test API keys. No real money moves while this is on.', 'paystack-babe' ),
+				'desc'  => __( 'Use test API keys. No real money moves while this is on.', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_TEST_SECRET => array(
-				'label' => __( 'Test secret key', 'paystack-babe' ),
+				'label' => __( 'Test secret key', 'booking-gateway-for-paystack' ),
 				'type'  => 'password',
-				'desc'  => __( 'Starts with sk_test_. Never share this key.', 'paystack-babe' ),
+				'desc'  => __( 'Starts with sk_test_. Never share this key.', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_TEST_PUBLIC => array(
-				'label' => __( 'Test public key', 'paystack-babe' ),
+				'label' => __( 'Test public key', 'booking-gateway-for-paystack' ),
 				'type'  => 'text',
-				'desc'  => __( 'Starts with pk_test_.', 'paystack-babe' ),
+				'desc'  => __( 'Starts with pk_test_.', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_LIVE_SECRET => array(
-				'label' => __( 'Live secret key', 'paystack-babe' ),
+				'label' => __( 'Live secret key', 'booking-gateway-for-paystack' ),
 				'type'  => 'password',
-				'desc'  => __( 'Starts with sk_live_. Never share this key.', 'paystack-babe' ),
+				'desc'  => __( 'Starts with sk_live_. Never share this key.', 'booking-gateway-for-paystack' ),
 			),
 			self::KEY_LIVE_PUBLIC => array(
-				'label' => __( 'Live public key', 'paystack-babe' ),
+				'label' => __( 'Live public key', 'booking-gateway-for-paystack' ),
 				'type'  => 'text',
-				'desc'  => __( 'Starts with pk_live_.', 'paystack-babe' ),
+				'desc'  => __( 'Starts with pk_live_.', 'booking-gateway-for-paystack' ),
 			),
 		);
 
@@ -163,12 +163,12 @@ class Paystack_Babe_Settings {
 	private static function render_webhook_hint( $settings_page, $section_id, $option_name ) {
 		add_settings_field(
 			'paystack_babe_webhook_url',
-			esc_html__( 'Webhook URL', 'paystack-babe' ),
+			esc_html__( 'Webhook URL', 'booking-gateway-for-paystack' ),
 			function () {
 				printf(
 					'<code style="user-select:all">%s</code><p class="description">%s</p>',
 					esc_html( Paystack_Babe_Webhook::endpoint_url() ),
-					esc_html__( 'Paste this into Paystack Dashboard → Settings → API Keys & Webhooks. Without it, a guest who closes their browser mid-payment will be charged without the booking being marked paid.', 'paystack-babe' )
+					esc_html__( 'Paste this into Paystack Dashboard → Settings → API Keys & Webhooks. Without it, a guest who closes their browser mid-payment will be charged without the booking being marked paid.', 'booking-gateway-for-paystack' )
 				);
 			},
 			$settings_page,

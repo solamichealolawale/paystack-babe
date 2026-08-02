@@ -1,4 +1,4 @@
-# Paystack for BA Book Everything
+# Booking Gateway for Paystack
 
 Adds [Paystack](https://paystack.com) as a payment method to the [BA Book Everything](https://wordpress.org/plugins/ba-book-everything/) WordPress booking plugin.
 
@@ -6,7 +6,7 @@ BA Book Everything ships with "Pay later" and "Pay by Coupon" only. Online payme
 
 This plugin fills that gap. It is free and GPLv3.
 
-> **Status: v0.2.0 — verified end-to-end in test mode.** A full booking has been completed through the real UI against BA Book Everything 1.8.x: room → dates → services → checkout → Paystack hosted checkout → callback → order marked paid, with the correct amount and currency. The **webhook path is still unverified** (it needs a publicly reachable URL). Run in Paystack **test mode** first and read [Known limitations](#known-limitations) before going live.
+> **Status: v0.4.0 — verified end-to-end in test mode.** A full booking has been completed through the real UI against BA Book Everything 1.8.x: room → dates → services → checkout → Paystack hosted checkout → callback → order marked paid, with the correct amount and currency. The **webhook path is still unverified** (it needs a publicly reachable URL). Run in Paystack **test mode** first and read [Known limitations](#known-limitations) before going live.
 
 ## Why this exists
 

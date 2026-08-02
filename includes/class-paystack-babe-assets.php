@@ -75,8 +75,8 @@ class Paystack_Babe_Assets {
 }
 ";
 
-		wp_register_style( 'paystack-babe', false, array(), PAYSTACK_BABE_VERSION );
-		wp_enqueue_style( 'paystack-babe' );
-		wp_add_inline_style( 'paystack-babe', $css );
+		wp_register_style( 'booking-gateway-for-paystack', false, array(), PAYSTACK_BABE_VERSION );
+		wp_enqueue_style( 'booking-gateway-for-paystack' );
+		wp_add_inline_style( 'booking-gateway-for-paystack', $css );
 	}
 }

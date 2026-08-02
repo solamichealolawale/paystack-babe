@@ -160,7 +160,7 @@ class Paystack_Babe_Webhook {
 
 		if ( ! $order_id ) {
 			self::log( sprintf( 'Ignoring reference not created by this plugin: %s', $reference ) );
-			return new WP_Error( 'paystack_babe_foreign_reference', __( 'Unrecognised payment reference.', 'paystack-babe' ) );
+			return new WP_Error( 'paystack_babe_foreign_reference', __( 'Unrecognised payment reference.', 'booking-gateway-for-paystack' ) );
 		}
 
 		// Serialise callback and webhook so they cannot both fulfil the same
@@ -189,7 +189,7 @@ class Paystack_Babe_Webhook {
 			self::log( sprintf( '[%s] Not fulfilling %s — transaction status is "%s".', $source, $reference, $status ) );
 			return new WP_Error(
 				'paystack_babe_not_successful',
-				__( 'The payment was not completed.', 'paystack-babe' )
+				__( 'The payment was not completed.', 'booking-gateway-for-paystack' )
 			);
 		}
 
@@ -206,13 +206,13 @@ class Paystack_Babe_Webhook {
 			if ( $paid_subunit < Paystack_Babe_Api::to_subunit( $expected ) ) {
 				delete_transient( $lock_key );
 				self::log( sprintf( '[%s] Underpayment on %s: expected %d, got %d.', $source, $reference, Paystack_Babe_Api::to_subunit( $expected ), $paid_subunit ) );
-				return new WP_Error( 'paystack_babe_amount_mismatch', __( 'The amount paid did not match the booking total.', 'paystack-babe' ) );
+				return new WP_Error( 'paystack_babe_amount_mismatch', __( 'The amount paid did not match the booking total.', 'booking-gateway-for-paystack' ) );
 			}
 
 			if ( '' !== $currency && $paid_ccy !== strtoupper( $currency ) ) {
 				delete_transient( $lock_key );
 				self::log( sprintf( '[%s] Currency mismatch on %s: expected %s, got %s.', $source, $reference, $currency, $paid_ccy ) );
-				return new WP_Error( 'paystack_babe_currency_mismatch', __( 'The payment currency did not match the booking.', 'paystack-babe' ) );
+				return new WP_Error( 'paystack_babe_currency_mismatch', __( 'The payment currency did not match the booking.', 'booking-gateway-for-paystack' ) );
 			}
 		}
 

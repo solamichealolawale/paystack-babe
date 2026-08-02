@@ -55,7 +55,7 @@ class Paystack_Babe_Gateway {
 	public static function checkout_title( $title ) {
 		$configured = Paystack_Babe_Settings::get( Paystack_Babe_Settings::KEY_TAB_TITLE );
 
-		return '' !== $configured ? $configured : __( 'Pay with Paystack', 'paystack-babe' );
+		return '' !== $configured ? $configured : __( 'Pay with Paystack', 'booking-gateway-for-paystack' );
 	}
 
 	/**
@@ -72,10 +72,10 @@ class Paystack_Babe_Gateway {
 		}
 
 		if ( Paystack_Babe_Settings::is_test_mode() ) {
-			return __( 'Paystack is in TEST mode — no real payment will be taken.', 'paystack-babe' );
+			return __( 'Paystack is in TEST mode — no real payment will be taken.', 'booking-gateway-for-paystack' );
 		}
 
-		return __( 'Pay securely by card, bank transfer or USSD.', 'paystack-babe' );
+		return __( 'Pay securely by card, bank transfer or USSD.', 'booking-gateway-for-paystack' );
 	}
 
 	/**
@@ -91,25 +91,25 @@ class Paystack_Babe_Gateway {
 		$order_id = absint( $order_id );
 
 		if ( ! $order_id ) {
-			self::fail( __( 'Could not identify the booking to pay for.', 'paystack-babe' ), $current_url );
+			self::fail( __( 'Could not identify the booking to pay for.', 'booking-gateway-for-paystack' ), $current_url );
 		}
 
 		if ( ! Paystack_Babe_Settings::is_configured() ) {
-			self::fail( __( 'Paystack is not configured. Please contact the property.', 'paystack-babe' ), $current_url );
+			self::fail( __( 'Paystack is not configured. Please contact the property.', 'booking-gateway-for-paystack' ), $current_url );
 		}
 
 		$amount   = self::resolve_amount( $order_id, $args );
 		$currency = self::resolve_currency( $order_id );
 
 		if ( $amount <= 0 ) {
-			self::fail( __( 'This booking has nothing left to pay.', 'paystack-babe' ), $current_url );
+			self::fail( __( 'This booking has nothing left to pay.', 'booking-gateway-for-paystack' ), $current_url );
 		}
 
 		if ( ! Paystack_Babe_Api::supports_currency( $currency ) ) {
 			self::fail(
 				sprintf(
 					/* translators: %s: ISO currency code. */
-					__( 'Paystack does not support %s.', 'paystack-babe' ),
+					__( 'Paystack does not support %s.', 'booking-gateway-for-paystack' ),
 					$currency
 				),
 				$current_url
@@ -130,7 +130,7 @@ class Paystack_Babe_Gateway {
 				'metadata'     => array(
 					'babe_order_id' => $order_id,
 					'customer_id'   => absint( $customer_id ),
-					'source'        => 'paystack-babe',
+					'source'        => 'booking-gateway-for-paystack',
 					'cancel_action' => $current_url,
 				),
 			)
@@ -144,7 +144,7 @@ class Paystack_Babe_Gateway {
 		}
 
 		if ( empty( $result['authorization_url'] ) ) {
-			self::fail( __( 'Paystack did not return a checkout URL.', 'paystack-babe' ), $current_url );
+			self::fail( __( 'Paystack did not return a checkout URL.', 'booking-gateway-for-paystack' ), $current_url );
 		}
 
 		// Remember where to send the guest back to. Stored against the

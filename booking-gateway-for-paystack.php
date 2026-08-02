@@ -1,23 +1,23 @@
 <?php
 /**
- * Plugin Name:       Paystack for BA Book Everything
- * Plugin URI:        https://github.com/solamichealolawale/paystack-babe
+ * Plugin Name:       Booking Gateway for Paystack
+ * Plugin URI:        https://github.com/solamichealolawale/booking-gateway-for-paystack
  * Description:       Adds Paystack as a payment method to the BA Book Everything booking plugin. Supports NGN, GHS, ZAR, KES, USD and XOF, test mode, server-side verification and signed webhooks.
- * Version:           0.3.0
+ * Version:           0.4.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            Olusola Olawale
  * Author URI:        https://github.com/solamichealolawale
  * License:           GPL-3.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-3.0.html
- * Text Domain:       paystack-babe
+ * Text Domain:       booking-gateway-for-paystack
  *
  * @package PaystackBabe
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'PAYSTACK_BABE_VERSION', '0.3.0' );
+define( 'PAYSTACK_BABE_VERSION', '0.4.0' );
 define( 'PAYSTACK_BABE_FILE', __FILE__ );
 define( 'PAYSTACK_BABE_PATH', plugin_dir_path( __FILE__ ) );
 
@@ -83,12 +83,12 @@ function paystack_babe_dependency_notice() {
 	}
 
 	$message = class_exists( 'BABE_Payments' )
-		? __( 'Paystack for BA Book Everything is inactive: the installed version of BA Book Everything does not expose the payment API this plugin needs. Payments will not be offered. Check for a BA Book Everything update, or report this at the plugin repository.', 'paystack-babe' )
-		: __( 'Paystack for BA Book Everything requires the BA Book Everything plugin to be installed and active.', 'paystack-babe' );
+		? __( 'Paystack for BA Book Everything is inactive: the installed version of BA Book Everything does not expose the payment API this plugin needs. Payments will not be offered. Check for a BA Book Everything update, or report this at the plugin repository.', 'booking-gateway-for-paystack' )
+		: __( 'Paystack for BA Book Everything requires the BA Book Everything plugin to be installed and active.', 'booking-gateway-for-paystack' );
 
 	printf(
 		'<div class="notice notice-error"><p><strong>%s</strong> %s</p></div>',
-		esc_html__( 'Paystack for BA Book Everything', 'paystack-babe' ),
+		esc_html__( 'Paystack for BA Book Everything', 'booking-gateway-for-paystack' ),
 		esc_html( $message )
 	);
 }

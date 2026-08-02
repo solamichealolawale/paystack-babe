@@ -88,7 +88,7 @@ class Paystack_Babe_Api {
 	 */
 	private function request( $method, $path, array $body = array() ) {
 		if ( '' === $this->secret_key ) {
-			return new WP_Error( 'paystack_babe_no_key', __( 'No Paystack secret key is configured.', 'paystack-babe' ) );
+			return new WP_Error( 'paystack_babe_no_key', __( 'No Paystack secret key is configured.', 'booking-gateway-for-paystack' ) );
 		}
 
 		$args = array(
@@ -119,7 +119,7 @@ class Paystack_Babe_Api {
 				'paystack_babe_bad_response',
 				sprintf(
 					/* translators: %d: HTTP status code. */
-					__( 'Paystack returned an unreadable response (HTTP %d).', 'paystack-babe' ),
+					__( 'Paystack returned an unreadable response (HTTP %d).', 'booking-gateway-for-paystack' ),
 					$code
 				)
 			);
@@ -131,7 +131,7 @@ class Paystack_Babe_Api {
 			// Nigerian accounts that have not enabled USD.
 			return new WP_Error(
 				'paystack_babe_api_error',
-				isset( $parsed['message'] ) ? (string) $parsed['message'] : __( 'Paystack rejected the request.', 'paystack-babe' ),
+				isset( $parsed['message'] ) ? (string) $parsed['message'] : __( 'Paystack rejected the request.', 'booking-gateway-for-paystack' ),
 				array( 'http_code' => $code )
 			);
 		}
